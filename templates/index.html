@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Say What?!?</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+      html { height: 100% }
+      body { height: 100%; margin: 0; padding: 0 }
+      #map-canvas { height: 100% }
+    </style>
+    <script type="text/javascript"
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCcSLwPhM2496vTvOk2Rixe0PSlfFUPMa4&sensor=false">
+    </script>
+    <script src="../static/withlabel.js"></script>
+    <style type="text/css">
+    .labels {
+       color: black;
+       background-color: white;
+       font-family: "Lucida Grande", "Arial", sans-serif;
+       font-size: 12px;
+       font-weight: bold;
+       text-align: center;
+       width: 150px;     
+       border: 1px solid black;
+       white-space: pre-line;
+     }
+     .blanks {
+       color: black;
+       background-color: white;
+       font-family: "Lucida Grande", "Arial", sans-serif;
+       font-size: 9px;
+       font-weight: bold;
+       text-align: center;
+       width: 0px;     
+       border: 0px solid black;
+       white-space: pre-line;
+     }
+  </style>
+  <script type="text/javascript">
+      //Global for when to hide main picture 
+      pic_hide = true
+      //Global for when to hide all text boxes
+      text_hide = true
+      //All markers
+      all_markers = []
+      //X and Y of all markers corresponding to that in the all_markers array
+      markers_positions = []
+      //Marker dates corresponding to other array
+      marker_dates = []
+      //Need var for it to work on mobile.
+      var toggle = function() {
+        if (pic_hide) {
+          //Remove picture from map
+          historicalOverlay.setMap(null)
+          pic_hide = false
+        }
+        //This was used for toggling the silly picture. No longer needed.
+         /* else {
+          historicalOverlay.setMap(map)
+          pic_hide = true
+        }*/
+      }
+      function toggleLocation() {
+        for (var i = 0; i < all_markers.length; i+=1) {
+          //Set locations back to their originaal based off the position array.
+          all_markers[i].setPosition(markers_positions[i])
+        }
+      }
+      function toggleText() {
+        //If the marker is showing, toggle its text
+        for (var i = 0; i < all_markers.length; i+=1) {
+            if (all_markers[i].getVisible() == true) {
+              if (text_hide) {
+                  all_markers[i].setOptions({
+                    labelClass: 'labels',
+                    labelContent: all_markers[i].title,
+                  })
+                }
+              else {
+                  all_markers[i].setOptions({
+                    labelClass: 'blanks',
+                    labelContent: '',
+                  })
+              }
+            }
+          }
+        //Switch the text box as hidden or shown.
+        if (text_hide == true)
+          text_hide = false
+        else
+          text_hide = true
+      }
+      //HTML 5 GeoLocation. User must accept to use App.
+      function getLocation()
+      {
+        if (navigator.geolocation)
+          {
+            navigator.geolocation.getCurrentPosition(initialize); //Run app if allow for HTML 5 GEO
+          }
+        else
+          {
+            x.innerHTML = "Geolocation is not supported by this browser.";}
+      }
+      //POST Marker to server add to screen
+      function addMarker(x,y) {
+          var text = prompt("Enter what to say!")
+          var date = new Date()
+          var min
+          var seconds
+          var hour
+          var am
+          var month
+          var day
+          //Building string for date
+          if (date.getDate() < 10)
+            day = "0"+date.getDate()
+          else
+            day=date.getDate()
+          if (date.getMonth() < 9)
+            month = "0"+(date.getMonth()+1)
+          else
+            month=''+(date.getMonth()+1)
+          if (date.getMinutes() < 10)
+            min = "0"+date.getMinutes()
+          else
+            min=date.getMinutes()
+          if (date.getSeconds() < 10)
+            seconds = "0"+date.getSeconds()
+          else
+            seconds=date.getSeconds()
+          if (date.getHours() < 13) {
+            if (date.getHours() == 0)
+              hour = 12
+            else
+              hour = ''+date.getHours()
+            am = 'AM'
+          }
+          else {
+            hour=''+(date.getHours() - 12)
+            am = 'PM'
+          }
+          dateString = ""+month+"/"+day+"/"+date.getFullYear()+" "+hour+":"+min+"."+seconds+am
+          var jsonobj = {
+            "words": text,
+            "y": y,
+            "x": x,
+            "date": dateString
+          }
+          //Send to server if user hits ok and if data is not empty string.
+          if (text!=null && text!="") {
+            if (confirm("Are you sure you would like to post\n\""+text+"\"")) {
+              var xmlhttp= new XMLHttpRequest();
+              xmlhttp.open("POST","/",true);
+              xmlhttp.setRequestHeader("Content-Type", "application/json");
+              xmlhttp.send(JSON.stringify(jsonobj))
+              updateMarker(''+x+' '+y+' '+text+' '+dateString, true)
+            }
+            else
+              return 1
+          }
+          else
+            return 1 //User hit cancel or did not enter a string
+      }
+      //Get Markers from server
+      function getMarkers() {
+          var xmlhttp= new XMLHttpRequest();
+          xmlhttp.open("GET","/data/",false);
+          xmlhttp.send();
+          if (xmlhttp.responseText != "") { //Server side error if ""
+            return xmlhttp.responseText //String of objects?
+          }
+          else {
+            alert("No previous messages to load.") //Error
+            return ""
+          }
+      }
+      //Print markers to screen and add click event to them.
+      function updateMarker(markerstring, vis) {
+            //get data from string and make marker object from it.
+            var temp = markerstring.split(" ")
+            var tx = temp[0]
+            var ty = temp[1]
+            var tdate = temp[temp.length-2]
+            var ttime = temp[temp.length-1]
+            var twords = "\""
+            for (var j = 2; j < temp.length-2; j+=1) { //Getting correct string
+              twords += temp[j]
+              if (j+1 != temp.length-2)
+                twords+=" "
+            }
+            twords +="\" "+tdate+" "+ttime
+            var tLL = new google.maps.LatLng(tx,ty);
+            var marker = new MarkerWithLabel({
+               position: tLL,
+               draggable: true,
+               raiseOnDrag: true,
+               map: map,
+               visible: vis,
+               clickable: true,
+               labelContent: "",
+               labelAnchor: new google.maps.Point(73, 0), //Defines our text box size
+               labelClass: "blanks", // the CSS class for the label
+               title: twords,
+           });
+          //Add marker data to to their arrays
+          all_markers.push(marker)
+          marker_dates.push(tdate)
+          markers_positions.push(marker.position)
+          //Toggle text box event
+          google.maps.event.addListener(marker, 'click', function(event) {
+          if (this.labelClass == "blanks") {
+              this.setOptions({
+              visible: true,
+              labelContent: this.title,
+              labelClass: "labels"
+          })}
+          else {
+               this.setOptions({
+               visible: true,
+               labelContent: "",
+               labelClass: "blanks", // the CSS class for the label
+          })}
+        });
+      }
+      //Add map object, get x and y of user, etc.
+      function showDates(num) {
+        //Reset shown text on visible markers
+        for (var i = 0; i < all_markers.length; i+=1) {
+          if (all_markers[i].getVisible() == true && !text_hide) {
+            google.maps.event.trigger(all_markers[i], 'click');
+          }
+        }
+        text_hide = true
+        // 0 Today, 1 Yesterday, 2 Past 7 Days, 3 Past 31 days, 4 Past year, 5 All Days
+        num = parseInt(num)
+        var date = new Date()
+        var month
+        var day
+        var year
+        var ds
+        var oneDaySeconds = 86400000 //Miliseconds in one day
+        if (date.getDate() < 11)
+          yest = "0"+(date.getDate()-1)
+        else
+          yest=''+(date.getDate()-1)
+        if (date.getDate() < 10)
+          day = "0"+date.getDate()
+        else
+          day=''+date.getDate()
+        if (date.getMonth() < 9)
+          month = "0"+(date.getMonth()+1)
+        else
+          month=''+date.getMonth()+1 
+        year = ''+date.getFullYear()
+        ds = month+"/"+day+"/"+year
+        var startofday = new Date(ds).getTime()
+        var startYesterday = startofday - oneDaySeconds 
+        //Day is determined by current miliseconds since 1960. Today - Current Time
+        //Toggle which markers are shown based off which number is passed to function
+        switch (num) {
+          case 0: //Today
+            for (var i = 0; i < all_markers.length; i+=1) {
+              var tempTime = new Date(marker_dates[i]).getTime()
+              if ((startofday - tempTime) == 0) {
+                all_markers[i].setVisible(true)
+                all_markers[i].setOptions({
+                      labelClass: "labels",
+                    })
+              }
+              else
+                all_markers[i].setVisible(false)
+                all_markers[i].setOptions({
+                      labelClass: "blanks",
+                    })
+            }
+            break
+            case 1: //Yesterday
+              for (var i = 0; i < all_markers.length; i+=1) {
+                var tempTime = new Date(marker_dates[i]).getTime()
+                if ((startofday - tempTime) > 0 && (startofday - tempTime) <= oneDaySeconds) {
+                    all_markers[i].setVisible(true)
+                    all_markers[i].setOptions({
+                      labelClass: "labels",
+                    })
+                }
+                else
+                  all_markers[i].setVisible(false)
+                  all_markers[i].setOptions({
+                      labelClass: "blanks",
+                    })
+              }
+              break
+            case 2: //Past seven days
+              for (var i = 0; i < all_markers.length; i+=1) {
+                var tempTime = new Date(marker_dates[i]).getTime()
+                if ((startofday - tempTime) >= 0 && (startofday - tempTime) <= oneDaySeconds*7) {
+                    all_markers[i].setVisible(true)
+                    all_markers[i].setOptions({
+                      labelClass: "labels",
+                    })
+                }
+                else
+                  all_markers[i].setVisible(false)
+                  all_markers[i].setOptions({
+                      labelClass: "blanks",
+                    })
+              }
+              break
+            case 3: //Past 31
+              for (var i = 0; i < all_markers.length; i+=1) {
+                var tempTime = new Date(marker_dates[i]).getTime()
+                if ((startofday - tempTime) >= 0 && (startofday - tempTime) <= oneDaySeconds*31) {
+                    all_markers[i].setVisible(true)
+                    all_markers[i].setOptions({
+                      labelClass: "labels",
+                    })
+                }
+                else
+                  all_markers[i].setVisible(false)
+                  all_markers[i].setOptions({
+                      labelClass: "blanks",
+                    })
+              }
+              break
+            case 4: //Past Year
+              for (var i = 0; i < all_markers.length; i+=1) {
+                var tempTime = new Date(marker_dates[i]).getTime()
+                if ((startofday - tempTime) >= 0 && (startofday - tempTime) <= oneDaySeconds*365) {
+                    all_markers[i].setVisible(true)
+                    all_markers[i].setOptions({
+                      labelClass: "labels",
+                    })
+                }
+                else
+                  all_markers[i].setVisible(false)
+                  all_markers[i].setOptions({
+                      labelClass: "blanks",
+                  })
+              }
+              break
+            case 5: //All days
+              for (var i = 0; i < all_markers.length; i+=1) {
+                  all_markers[i].setVisible(true)
+                  all_markers[i].labelClass = 'labels'
+                  all_markers[i].labelContent = all_markers[i].title
+                }
+              break
+        } 
+      }
+      //Main function
+      function initialize(position) {
+        //User x and y cord when starting app
+        USERX = position.coords.latitude
+        USERY = position.coords.longitude
+        //Position object
+        var imageBounds = new google.maps.LatLngBounds(
+          new google.maps.LatLng(USERX-.0050, USERY-.0050),
+          new google.maps.LatLng(USERX+.0050, USERY+.0050));
+        var myLatlng = new google.maps.LatLng(USERX,USERY);
+        //Center map
+        var mapOptions = {
+          center: new google.maps.LatLng(USERX, USERY),
+          zoom: 16,
+          mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+        //Create map
+        map = new google.maps.Map(document.getElementById("map-canvas"),
+            mapOptions);
+        //Add the original silly picture to map
+        historicalOverlay = new google.maps.GroundOverlay(
+            '../static/ic_launcher.png',
+            imageBounds);
+        historicalOverlay.setMap(map);
+        //Click event for adding to map new text
+        google.maps.event.addListener(map, "click", function (e) {
+          addMarker(e.latLng.lat(), e.latLng.lng())
+        });
+        //Remove picture
+        google.maps.event.addListener(map, "tilesloaded", function (e) {
+          setTimeout(toggle, 5000)
+        });
+        //User defined location text
+        google.maps.event.addListener(historicalOverlay, 'click', function(event) {
+          addMarker(USERX, USERY);
+        })
+        //Returned data from server large string. Split by new line.
+        var data = getMarkers().split("\n")
+        if (data != 0) {
+          for (var i = 0; i < data.length-1; i+=1) {
+            //Add marker to map.
+            updateMarker(data[i], false)
+          }
+        }
+        //Show today's markers.
+        showDates(0)
+       }
+      google.maps.event.addDomListener(window, 'load', getLocation);
+    </script>
+  </head>
+  <body>
+    <div id ="panel">
+      <!--<input type="button" value="Toggle 'Saw What?!?' button" onclick="toggleDOM();"></input>-->
+      <!--<input type="button" value="Post Text!" onclick="addMarker(USERX, USERY)"></input>-->
+      <input type="button" value="Show/hide all text" onclick="toggleText();"></input>
+      <input type="button" value="Reset icon locations" onclick="toggleLocation();"></input>
+      <select name="time-menu" onchange="showDates(this.value)">
+        <option value="0">Today</option>
+        <option value="1">Yesterday</option>
+        <option value="2">Past Week</option>
+        <option value="3">Past Month</option>
+        <option value="4">Past Year</option>
+        <option value="5">All Posts</option>
+      </select>
+      Click to add a post for that location!
+      <!--Search specific date. (DD/MM/YYYY)<input type="text" name="specificTime" value=""><input type="submit" value="Submit"> -->
+    </div>
+    <div id="map-canvas"/>
+  </body>
+</html>
